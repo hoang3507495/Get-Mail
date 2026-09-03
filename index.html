@@ -24,7 +24,7 @@
         .btn-copy-main { width: 100%; background-color: #3b5bdb; color: white; padding: 16px 0; font-size: 18px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-copy-main:active { background-color: #2b44b6; transform: scale(0.98); }
         .btn-copy-main:disabled { background-color: #adb5bd; cursor: not-allowed; }
-        .status-msg { margin-top: 12px; font-size: 14px; text-align: center; font-weight: 500; color: #2b8a3e; word-break: break-all; }
+        .status-msg { margin-top: 15px; font-size: 18px; text-align: center; font-weight: bold; color: #2b8a3e; word-break: break-all; min-height: 24px; }
     </style>
 </head>
 <body>
@@ -45,7 +45,7 @@
 
     <button id="getBtn" class="btn-copy-main" onclick="copyAndRemoveMail()">🚀 COPY MAIL</button>
 
-    <div id="status" class="status-msg">Đang kết nối Firebase...</div>
+    <div id="status" class="status-msg"></div>
 </div>
 
 <script>
@@ -75,13 +75,9 @@
             if (data) {
                 const count = Object.keys(data).length;
                 document.getElementById("mailCount").innerText = count;
-                showStatus("✅ Đã kết nối! Sẵn sàng sử dụng.");
             } else {
                 document.getElementById("mailCount").innerText = "0";
-                showStatus("✅ Đã kết nối! Cơ sở dữ liệu trống.");
             }
-        }, (error) => {
-            showStatus("❌ Lỗi kết nối Firebase: " + error.message);
         });
 
         // 1. NÚT ADD: Tự lấy mail trước dấu |
@@ -89,10 +85,7 @@
             const textarea = document.getElementById("mailInput");
             let rawText = textarea.value.trim();
 
-            if (!rawText) {
-                showStatus("Hãy dán danh sách mail vào ô!");
-                return;
-            }
+            if (!rawText) return;
 
             let lines = rawText.split("\n");
             let cleanMails = lines.map(line => {
@@ -103,75 +96,64 @@
 
             if (cleanMails.length === 0) return;
 
-            showStatus("⏳ Đang lưu mail...");
-
             let updates = {};
             cleanMails.forEach(email => {
                 let newKey = mailsRef.push().key;
                 updates[newKey] = email;
             });
 
-            mailsRef.update(updates)
-                .then(() => {
-                    textarea.value = "";
-                    showStatus("✅ Đã thêm " + cleanMails.length + " mail siêu tốc!");
-                })
-                .catch(err => showStatus("❌ Lỗi thêm mail: " + err.message));
+            mailsRef.update(updates).then(() => {
+                textarea.value = "";
+                showStatus("Đã thêm " + cleanMails.length + " mail");
+            });
         };
 
-        // 2. NÚT COPY MAIL: XỬ LÝ ATOMIC TRANSACTION CHỐNG TRÙNG MULTI-DEVICE
+        // 2. NÚT COPY MAIL: SỬA LỖI NULL & CHỈ HIỂN THỊ DÒNG MAIL
         let isProcessing = false;
 
         window.copyAndRemoveMail = function() {
-            if (isProcessing) return; // Khóa chống bấm liên tục trên 1 máy
+            if (isProcessing) return;
             
             const copyBtn = document.getElementById("getBtn");
             isProcessing = true;
             copyBtn.disabled = true;
-            showStatus("⏳ Đang lấy mail...");
 
-            // Lấy ra ID của mail đầu tiên
+            // Lấy ra ID và giá trị mail đầu tiên
             mailsRef.limitToFirst(1).once("value", (snapshot) => {
                 const data = snapshot.val();
                 if (!data) {
-                    showStatus("❌ Hết mail trên hệ thống!");
+                    showStatus("Hết mail!");
                     isProcessing = false;
                     copyBtn.disabled = false;
                     return;
                 }
 
                 const targetKey = Object.keys(data)[0];
+                const emailValue = data[targetKey]; // Lưu sẵn giá trị Mail
 
-                // Thực hiện Transaction trên node mail đó
+                // Thực hiện Transaction để xóa an toàn chống trùng
                 db.ref("mails/" + targetKey).transaction((currentValue) => {
-                    // Nếu mail vẫn tồn tại (chưa bị máy khác lấy mất) -> Xóa mail bằng cách trả về null
                     if (currentValue !== null) {
-                        return null; 
+                        return null; // Xóa khỏi DB
                     }
-                    // Nếu đã bị máy khác nhanh tay xóa mất trước đó -> Hủy transaction
-                    return; 
-                }, (error, committed, snapshot) => {
-                    if (error) {
-                        showStatus("❌ Lỗi giao dịch: " + error.message);
-                        isProcessing = false;
-                        copyBtn.disabled = false;
-                    } else if (!committed) {
-                        // Bị máy khác lấy trước mất vài miligiay -> Tự động thử lấy mail tiếp theo
+                    return;
+                }, (error, committed) => {
+                    if (error || !committed) {
+                        // Nếu bị máy khác tranh mất, tự gọi lại để lấy mail tiếp theo
                         isProcessing = false;
                         copyBtn.disabled = false;
                         copyAndRemoveMail();
                     } else {
-                        // Lấy mail thành công và xóa sạch khỏi Database
-                        const email = snapshot.val();
-                        navigator.clipboard.writeText(email).then(() => {
-                            showStatus("🚀 Đã COPY & XÓA: " + email);
-                        }).catch(() => {
-                            // Trường hợp trình duyệt chặn clipboard thì vẫn hiển thị mail ra màn hình
-                            showStatus("🚀 Đã LẤY & XÓA: " + email + " (Hãy tự copy)");
-                        }).finally(() => {
-                            isProcessing = false;
-                            copyBtn.disabled = false;
-                        });
+                        // Tự động Copy vào bộ nhớ tạm
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(emailValue);
+                        }
+                        
+                        // CHỈ HIỂN THỊ DUY NHẤT EMAIL RA MÀN HÌNH
+                        showStatus(emailValue);
+                        
+                        isProcessing = false;
+                        copyBtn.disabled = false;
                     }
                 });
             });
@@ -179,23 +161,18 @@
 
         // 3. NÚT XÓA TẤT CẢ
         window.clearAllMails = function() {
-            if (confirm("Bạn có chắc chắn muốn xóa tất cả mail trên hệ thống?")) {
-                mailsRef.remove()
-                    .then(() => {
-                        document.getElementById("mailInput").value = "";
-                        showStatus("✅ Đã xóa sạch mail!");
-                    })
-                    .catch(err => showStatus("❌ Lỗi: " + err.message));
+            if (confirm("Xóa toàn bộ mail?")) {
+                mailsRef.remove().then(() => {
+                    document.getElementById("mailInput").value = "";
+                    showStatus("");
+                });
             }
         };
 
         // 4. NÚT TẢI FILE
         window.downloadFile = function() {
             let text = document.getElementById("mailInput").value;
-            if (!text.trim()) {
-                showStatus("Không có nội dung để tải!");
-                return;
-            }
+            if (!text.trim()) return;
             let blob = new Blob([text], { type: "text/plain;charset=utf-8" });
             let a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
@@ -204,7 +181,7 @@
         };
 
     } catch (e) {
-        showStatus("❌ Lỗi khởi tạo Code: " + e.message);
+        showStatus("Lỗi khởi tạo");
     }
 
     function showStatus(msg) {
@@ -214,4 +191,3 @@
 
 </body>
 </html>
-
