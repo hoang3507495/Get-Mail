@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mail Manager Hoangstm</title>
-    <!-- Tải thư viện Firebase chính hãng -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <!-- Nhúng thư viện Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #e9ecef; margin: 0; padding: 20px 15px; color: #333; }
         .container { max-width: 480px; margin: 0 auto; }
@@ -34,7 +34,7 @@
     <div class="count-text">Số mail: <span id="mailCount">0</span></div>
 
     <div class="yellow-bar"></div>
-    <textarea id="mailInput" placeholder="Dán danh sách mail vào đây..."></textarea>
+    <textarea id="mailInput" placeholder="Dán danh sách mail vào đây (vd: mail|pass)..."></textarea>
 
     <div class="btn-group">
         <button id="addBtn" class="btn btn-add" onclick="addMails()">Add</button>
@@ -48,124 +48,125 @@
 </div>
 
 <script>
-    // -------------------------------------------------------------
-    // THAY CẤU HÌNH FIREBASE CỦA BẠN VÀO ĐÂY:
-     const firebaseConfig = {
-  apiKey: "AIzaSyCCNUbvDucT2jrpm1lIhjpFxKD-kR7Ebe8",
-  authDomain: "mailmanager-6d165.firebaseapp.com",
-  databaseURL: "https://mailmanager-6d165-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "mailmanager-6d165",
-  storageBucket: "mailmanager-6d165.firebasestorage.app",
-  messagingSenderId: "509322392535",
-  appId: "1:509322392535:web:cee24334137c05f1f05192",
-  measurementId: "G-WBKT08PZYZ"
-};
+    // Cấu hình Firebase đã được tích hợp sẵn
+    const firebaseConfig = {
+      apiKey: "AIzaSyCCNUbvDucT2jrpm1lIhjpFxKD-kR7Ebe8",
+      authDomain: "mailmanager-6d165.firebaseapp.com",
+      databaseURL: "https://mailmanager-6d165-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "mailmanager-6d165",
+      storageBucket: "mailmanager-6d165.firebasestorage.app",
+      messagingSenderId: "509322392535",
+      appId: "1:509322392535:web:cee24334137c05f1f05192",
+      measurementId: "G-WBKT08PZYZ"
     };
-    // ---------------------nn----------------------------------------
 
-    // Khởi tạo Firebase
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
-    const mailsRef = db.ref("mails");
-
-    // Lắng nghe biến động Realtime (Tự động cập nhật số lượng khi có thay đổi)
-    mailsRef.on("value", (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-            const count = Object.keys(data).length;
-            document.getElementById("mailCount").innerText = count;
-            showStatus("Sẵn sàng! Lượng mail: " + count);
-        } else {
-            document.getElementById("mailCount").innerText = "0";
-            showStatus("Cơ sở dữ liệu đang trống!");
-        }
-    });
-
-    // 1. TÍNH NĂNG ADD MAIL (Tốc độ tức thì)
-    function addMails() {
-        const textarea = document.getElementById("mailInput");
-        let rawText = textarea.value.trim();
-
-        if (!rawText) {
-            showStatus("Hãy dán danh sách mail vào ô!");
-            return;
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
         }
 
-        let lines = rawText.split("\n");
-        let cleanMails = lines.map(line => {
-            let trimmed = line.trim();
-            if (!trimmed) return "";
-            // Chỉ lấy email đứng trước dấu |
-            return trimmed.split("|")[0].trim();
-        }).filter(email => email !== "");
+        const db = firebase.database();
+        const mailsRef = db.ref("mails");
 
-        if (cleanMails.length === 0) return;
-
-        showStatus("⏳ Đang lưu mail...");
-
-        // Thêm hàng loạt mail vào Firebase
-        let updates = {};
-        cleanMails.forEach(email => {
-            let newKey = mailsRef.push().key;
-            updates[newKey] = email;
+        // Lắng nghe dữ liệu thời gian thực
+        mailsRef.on("value", (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                const count = Object.keys(data).length;
+                document.getElementById("mailCount").innerText = count;
+                showStatus("✅ Đã kết nối! Sẵn sàng sử dụng.");
+            } else {
+                document.getElementById("mailCount").innerText = "0";
+                showStatus("✅ Đã kết nối! Cơ sở dữ liệu trống.");
+            }
+        }, (error) => {
+            showStatus("❌ Lỗi kết nối Firebase: " + error.message);
         });
 
-        mailsRef.update(updates)
-            .then(() => {
-                textarea.value = "";
-                showStatus("✅ Đã thêm " + cleanMails.length + " mail siêu tốc!");
-            })
-            .catch(err => showStatus("❌ Lỗi: " + err.message));
-    }
+        // 1. NÚT ADD: Tự lấy mail trước dấu |
+        window.addMails = function() {
+            const textarea = document.getElementById("mailInput");
+            let rawText = textarea.value.trim();
 
-    // 2. TÍNH NĂNG COPY MAIL & XÓA KHỎI LƯU TRỮ (Tốc độ dưới 0.05s)
-    function copyAndRemoveMail() {
-        // Lấy mail đầu tiên trong danh sách Firebase
-        mailsRef.limitToFirst(1).once("value", (snapshot) => {
-            const data = snapshot.val();
-            if (!data) {
-                showStatus("❌ Hết mail trên hệ thống!");
+            if (!rawText) {
+                showStatus("Hãy dán danh sách mail vào ô!");
                 return;
             }
 
-            const key = Object.keys(data)[0];
-            const email = data[key];
+            let lines = rawText.split("\n");
+            let cleanMails = lines.map(line => {
+                let trimmed = line.trim();
+                if (!trimmed) return "";
+                return trimmed.split("|")[0].trim();
+            }).filter(email => email !== "");
 
-            // Tự động Copy vào Bộ nhớ tạm (Clipboard)
-            navigator.clipboard.writeText(email).then(() => {
-                // Xóa ngay lập tức khỏi Firebase
-                mailsRef.child(key).remove();
-                showStatus("🚀 Đã COPY & XÓA: " + email);
-            }).catch(() => {
-                showStatus("❌ Lỗi bộ nhớ tạm, hãy cấp quyền Copy cho trình duyệt!");
+            if (cleanMails.length === 0) return;
+
+            showStatus("⏳ Đang lưu mail...");
+
+            let updates = {};
+            cleanMails.forEach(email => {
+                let newKey = mailsRef.push().key;
+                updates[newKey] = email;
             });
-        });
-    }
 
-    // 3. XÓA TẤT CẢ MAIL
-    function clearAllMails() {
-        if (confirm("Bạn có chắc chắn muốn XÓA SẠCH toàn bộ mail trong cơ sở dữ liệu?")) {
-            mailsRef.remove()
+            mailsRef.update(updates)
                 .then(() => {
-                    document.getElementById("mailInput").value = "";
-                    showStatus("✅ Đã xóa tất cả!");
+                    textarea.value = "";
+                    showStatus("✅ Đã thêm " + cleanMails.length + " mail siêu tốc!");
                 })
-                .catch(err => showStatus("Lỗi xóa: " + err.message));
-        }
-    }
+                .catch(err => showStatus("❌ Lỗi thêm mail: " + err.message));
+        };
 
-    // 4. TẢI FILE DẠNG TXT
-    function downloadFile() {
-        let text = document.getElementById("mailInput").value;
-        if (!text.trim()) {
-            showStatus("Không có nội dung trong ô để tải!");
-            return;
-        }
-        let blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-        let a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "danh_sach_mail.txt";
-        a.click();
+        // 2. NÚT COPY MAIL: Rút 1 mail ra, copy và xóa trên Firebase
+        window.copyAndRemoveMail = function() {
+            mailsRef.limitToFirst(1).once("value", (snapshot) => {
+                const data = snapshot.val();
+                if (!data) {
+                    showStatus("❌ Hết mail trên hệ thống!");
+                    return;
+                }
+
+                const key = Object.keys(data)[0];
+                const email = data[key];
+
+                navigator.clipboard.writeText(email).then(() => {
+                    mailsRef.child(key).remove();
+                    showStatus("🚀 Đã COPY & XÓA: " + email);
+                }).catch(() => {
+                    showStatus("❌ Lỗi copy vào bộ nhớ tạm!");
+                });
+            });
+        };
+
+        // 3. NÚT XÓA TẤT CẢ
+        window.clearAllMails = function() {
+            if (confirm("Bạn có chắc chắn muốn xóa tất cả mail trên hệ thống?")) {
+                mailsRef.remove()
+                    .then(() => {
+                        document.getElementById("mailInput").value = "";
+                        showStatus("✅ Đã xóa sạch mail!");
+                    })
+                    .catch(err => showStatus("❌ Lỗi: " + err.message));
+            }
+        };
+
+        // 4. NÚT TẢI FILE
+        window.downloadFile = function() {
+            let text = document.getElementById("mailInput").value;
+            if (!text.trim()) {
+                showStatus("Không có nội dung để tải!");
+                return;
+            }
+            let blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+            let a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "danh_sach_mail.txt";
+            a.click();
+        };
+
+    } catch (e) {
+        showStatus("❌ Lỗi khởi tạo Code: " + e.message);
     }
 
     function showStatus(msg) {
