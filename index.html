@@ -25,11 +25,11 @@
         .btn-copy-main:active { background-color: #2b44b6; transform: scale(0.98); }
         .btn-copy-main:disabled { background-color: #8296fd; cursor: not-allowed; }
         
-        /* DÒNG HIỂN THỊ TÊN GMAIL VỪA RÚT (CHẠM VÀO TÊN MAIL LÀ TỰ COPY LẠI) */
+        /* DÒNG HIỂN THỊ TÊN GMAIL (CHẠM VÀO TÊN MAIL LÀ TỰ COPY LẠI) */
         .copied-mail-text {
             margin-top: 15px;
-            padding: 8px;
-            font-size: 19px;
+            padding: 10px;
+            font-size: 20px;
             font-weight: bold;
             color: #2b8a3e;
             text-align: center;
@@ -37,10 +37,10 @@
             cursor: pointer;
             border-radius: 6px;
             transition: background-color 0.2s;
-            display: none; /* Mặc định ẩn, khi rút mail mới hiện */
+            display: none;
         }
         .copied-mail-text:active {
-            background-color: #d1e7dd; /* Nhấp nháy nhẹ khi bấm vào chạm lấy mail */
+            background-color: #d1e7dd;
         }
 
         .status-msg { margin-top: 12px; font-size: 15px; text-align: center; font-weight: bold; color: #495057; min-height: 22px; }
@@ -64,7 +64,7 @@
 
     <button id="getBtn" class="btn-copy-main" onclick="copyAndRemoveMail()">🚀 COPY MAIL</button>
 
-    <!-- HIỂN THỊ TÊN GMAIL SẠCH SẼ - CHẠM TRỰC TIẾP LÀ SAO CHÉP LẠI -->
+    <!-- TÊN GMAIL HIỆN PHÍA DƯỚI - BẤM VÀO LÀ COPY LẠI -->
     <div id="mailDisplay" class="copied-mail-text" onclick="reCopyMail()"></div>
 
     <div id="status" class="status-msg">Đang kết nối Firebase...</div>
@@ -84,6 +84,10 @@
 
     let isProcessing = false;
     let lastEmail = "";
+
+    function showStatus(msg) {
+        document.getElementById("status").innerText = msg;
+    }
 
     try {
         if (!firebase.apps.length) {
@@ -143,7 +147,7 @@
                 .catch(err => showStatus("❌ Lỗi thêm mail: " + err.message));
         };
 
-        // 2. NÚT COPY MAIL - CHỈ HIỂN THỊ TÊN GMAIL NGUYÊN BẢN
+        // 2. NÚT COPY MAIL
         window.copyAndRemoveMail = function() {
             if (isProcessing) return;
 
@@ -181,10 +185,11 @@
                         const email = snapshot.val();
                         lastEmail = email;
 
-                        // Tự động sao chép vào bộ nhớ tạm
+                        // Tự động copy
                         navigator.clipboard.writeText(email);
 
-                        // Chỉ hiển thị đúng tên email phía dưới
+                        // Xóa dòng thông báo trạng thái, hiện tên Email bên dưới
+                        showStatus(""); 
                         const displayEl = document.getElementById("mailDisplay");
                         displayEl.innerText = email;
                         displayEl.style.display = "block";
@@ -196,11 +201,11 @@
             });
         };
 
-        // 3. CHẠM TRỰC TIẾP VÀO TÊN EMAIL ĐỂ SAO CHÉP LẠI
+        // 3. BẤM VÀO TÊN EMAIL ĐỂ COPY LẠI
         window.reCopyMail = function() {
             if (!lastEmail) return;
             navigator.clipboard.writeText(lastEmail).then(() => {
-                showStatus("✅ Đã lấy lại: " + lastEmail);
+                showStatus("✅ Đã copy lại: " + lastEmail);
             });
         };
 
@@ -235,13 +240,7 @@
     } catch (e) {
         showStatus("❌ Lỗi khởi tạo Code: " + e.message);
     }
-
-    function showStatus(msg) {
-        document.getElementById("status").innerText = msg;
-    }
 </script>
 
 </body>
 </html>
-
-
