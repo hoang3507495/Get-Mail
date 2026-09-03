@@ -132,7 +132,7 @@
 
                 navigator.clipboard.writeText(email).then(() => {
                     mailsRef.child(key).remove();
-                    showStatus("🚀 Đã COPY & XÓA: " + email);
+                    showStatus(email);
                 }).catch(() => {
                     showStatus("❌ Lỗi copy vào bộ nhớ tạm!");
                 });
