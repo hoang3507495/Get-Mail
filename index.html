@@ -7,16 +7,18 @@
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #e9ecef; margin: 0; padding: 20px 15px; color: #333; }
         .container { max-width: 480px; margin: 0 auto; }
-        .header { font-size: 24px; font-weight: bold; margin-bottom: 8px; }
-        .header .brand { color: #4361ee; }
+        .header { font-size: 24px; font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+        .header .brand { color: #3b5bdb; }
         .count-text { font-size: 18px; font-weight: bold; margin-bottom: 12px; }
         .yellow-bar { background-color: #fff3bf; height: 18px; border-radius: 6px 6px 0 0; border: 1px solid #ffe066; border-bottom: none; }
-        textarea { width: 100%; height: 160px; padding: 12px; box-sizing: border-box; border: 1px solid #ced4da; border-radius: 0 0 12px 12px; font-size: 15px; outline: none; resize: vertical; background-color: #ffffff; }
-        .btn-group { display: flex; gap: 10px; margin-top: 15px; margin-bottom: 20px; }
-        .btn { border: none; border-radius: 8px; padding: 12px 0; font-size: 15px; font-weight: 600; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; flex: 1; }
-        .btn-add { background-color: #3b5bdb; }
-        .btn-add:disabled { background-color: #868e96; }
-        .btn-copy-main { width: 100%; background-color: #3b5bdb; color: white; padding: 16px 0; font-size: 18px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; }
+        textarea { width: 100%; height: 180px; padding: 12px; box-sizing: border-box; border: 1px solid #ced4da; border-radius: 0 0 12px 12px; font-size: 15px; outline: none; resize: vertical; background-color: #ffffff; }
+        .btn-group { display: flex; gap: 8px; margin-top: 15px; margin-bottom: 20px; }
+        .btn { border: none; border-radius: 8px; padding: 12px 0; font-size: 15px; font-weight: 600; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; background-color: #3b5bdb; }
+        .btn:disabled { background-color: #868e96; }
+        .btn-add { flex: 1; }
+        .btn-delete { flex: 1.3; }
+        .btn-file { flex: 1.2; }
+        .btn-copy-main { width: 100%; background-color: #3b5bdb; color: white; padding: 16px 0; font-size: 18px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-copy-main:disabled { background-color: #868e96; }
         .status-msg { margin-top: 12px; font-size: 14px; text-align: center; font-weight: 500; color: #2b8a3e; word-break: break-all; }
     </style>
@@ -26,13 +28,15 @@
 <div class="container">
     <div class="header">📩 Mail Manager <span class="brand">Hoangstm</span></div>
     
-    <div class="count-text">Số mail trên Sheet: <span id="mailCount">...</span></div>
+    <div class="count-text">Số mail: <span id="mailCount">...</span></div>
 
     <div class="yellow-bar"></div>
-    <textarea id="mailInput" placeholder="Dán danh sách mail vào đây (ví dụ: mail|pass)..."></textarea>
+    <textarea id="mailInput" placeholder="Dán danh sách mail vào đây..."></textarea>
 
     <div class="btn-group">
-        <button id="addBtn" class="btn btn-add" onclick="addMailToSheet()">Add vào Sheets</button>
+        <button id="addBtn" class="btn btn-add" onclick="addMailToSheet()">Add</button>
+        <button id="clearBtn" class="btn btn-delete" onclick="clearAllSheet()">❌ Xóa tất cả</button>
+        <button class="btn btn-file" onclick="downloadFile()">⬇️ Tải file</button>
     </div>
 
     <button id="getBtn" class="btn-copy-main" onclick="getMailFromSheet()">🚀 COPY MAIL</button>
@@ -41,29 +45,47 @@
 </div>
 
 <script>
-    // DÁN LINK GOOGLE APPS SCRIPT CỦA BẠN VÀO GIỮA 2 DẤU NGOẶC KÉP BÊN DƯỚI:
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyXGaVQ11SqPM6uvdA1_NA-JjhFrzMEoxFXNsxZ8SmU3YXRq4lGHHSRg0-8Uy1wB5gF/exec";
+    // DÁN LINK GOOGLE APPS SCRIPT CỦA BẠN VÀO DƯỚI ĐÂY:
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx_RNHkCVrDhgSUcN4vJ71dXXy2LweX2V1B7HBQYGl1GzCo4ZxMk4XtS9ho3kEvtVrAKA/exec";
 
-    // Thêm Mail vào Google Sheets
+    // Tự động cập nhật số lượng mail khi mở trang
+    window.onload = function() {
+        updateCountFromSheet();
+    };
+
+    function updateCountFromSheet() {
+        fetch(GOOGLE_SCRIPT_URL + "?action=count")
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "success") {
+                    document.getElementById("mailCount").innerText = data.count;
+                }
+            }).catch(() => {});
+    }
+
+    // Nút ADD: Lọc lấy mail trước dấu | và đẩy lên Google Sheets
     function addMailToSheet() {
         const textarea = document.getElementById("mailInput");
         const addBtn = document.getElementById("addBtn");
-        const status = document.getElementById("status");
         let rawText = textarea.value.trim();
 
         if (!rawText) {
-            showStatus("Hãy dán mail vào ô trước!");
+            showStatus("Hãy dán danh sách mail vào ô!");
             return;
         }
 
-        // Tách dòng và lấy mail trước dấu |
+        // Tách lấy duy nhất Email đứng trước dấu |
         let lines = rawText.split("\n");
-        let cleanMails = lines.map(line => line.trim().split("|")[0].trim()).filter(email => email !== "");
+        let cleanMails = lines.map(line => {
+            let trimmed = line.trim();
+            if (!trimmed) return "";
+            return trimmed.split("|")[0].trim();
+        }).filter(email => email !== "");
 
         if (cleanMails.length === 0) return;
 
         addBtn.disabled = true;
-        showStatus("⏳ Đang tải mail lên Sheets...");
+        showStatus("⏳ Đang lưu mail vào Google Sheets...");
 
         fetch(GOOGLE_SCRIPT_URL, {
             method: "POST",
@@ -75,17 +97,17 @@
             addBtn.disabled = false;
             textarea.value = "";
             showStatus("✅ Đã thêm " + cleanMails.length + " mail vào Sheets!");
+            setTimeout(updateCountFromSheet, 1000);
         })
         .catch(err => {
             addBtn.disabled = false;
-            showStatus("❌ Lỗi thêm mail: " + err);
+            showStatus("❌ Lỗi khi thêm mail!");
         });
     }
 
-    // Lấy 1 Mail từ Google Sheets
+    // Nút COPY MAIL: Lấy mail ra, tự động Copy và XÓA trên Google Sheets
     function getMailFromSheet() {
         const getBtn = document.getElementById("getBtn");
-        const status = document.getElementById("status");
 
         getBtn.disabled = true;
         showStatus("⏳ Đang lấy mail...");
@@ -98,7 +120,7 @@
                     let cleanMail = data.email.split("|")[0].trim();
                     navigator.clipboard.writeText(cleanMail);
                     document.getElementById("mailCount").innerText = data.count;
-                    showStatus("✅ Đã COPY: " + cleanMail);
+                    showStatus("🚀 Đã COPY & XÓA trên Sheet: " + cleanMail);
                 } else if (data.status === "empty") {
                     document.getElementById("mailCount").innerText = "0";
                     showStatus("❌ Hết mail trên hệ thống!");
@@ -110,6 +132,34 @@
                 getBtn.disabled = false;
                 showStatus("Lỗi kết nối!");
             });
+    }
+
+    // Xóa toàn bộ mail trên Google Sheets
+    function clearAllSheet() {
+        if (confirm("Bạn có chắc muốn xóa sạch toàn bộ mail lưu trên Google Sheets?")) {
+            showStatus("⏳ Đang xóa...");
+            fetch(GOOGLE_SCRIPT_URL + "?action=clear")
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById("mailCount").innerText = "0";
+                    document.getElementById("mailInput").value = "";
+                    showStatus("✅ Đã xóa sạch dữ liệu!");
+                });
+        }
+    }
+
+    // Tải file dạng Text về máy
+    function downloadFile() {
+        let text = document.getElementById("mailInput").value;
+        if (!text.trim()) {
+            showStatus("Không có mail trong khung để tải!");
+            return;
+        }
+        let blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+        let a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "danh_sach_mail.txt";
+        a.click();
     }
 
     function showStatus(msg) {
