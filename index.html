@@ -24,8 +24,7 @@
         .btn-copy-main { width: 100%; background-color: #3b5bdb; color: white; padding: 16px 0; font-size: 18px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-copy-main:active { background-color: #2b44b6; transform: scale(0.98); }
         .btn-copy-main:disabled { background-color: #adb5bd; cursor: not-allowed; }
-        .status-msg { margin-top: 15px; font-size: 18px; text-align: center; font-weight: bold; color: #2b8a3e; word-break: break-all; min-height: 24px; }
-        #hiddenCopyInput { position: absolute; left: -9999px; top: -9999px; opacity: 0; }
+        .status-msg { margin-top: 15px; font-size: 18px; text-align: center; font-weight: bold; color: #2b8a3e; word-break: break-all; min-height: 24px; user-select: all; -webkit-user-select: all; }
     </style>
 </head>
 <body>
@@ -49,9 +48,6 @@
     <div id="status" class="status-msg"></div>
 </div>
 
-<!-- Input ẩn hỗ trợ Copy cho iOS / Safari -->
-<input type="text" id="hiddenCopyInput" readonly>
-
 <script>
     // Cấu hình Firebase
     const firebaseConfig = {
@@ -73,7 +69,7 @@
         const db = firebase.database();
         const mailsRef = db.ref("mails");
 
-        // Đồng bộ số lượng mail thời gian thực
+        // Đồng bộ số lượng mail
         mailsRef.on("value", (snapshot) => {
             const data = snapshot.val();
             if (data) {
@@ -111,45 +107,33 @@
             });
         };
 
-        // Hàm xử lý Copy vượt rào cản bảo mật di động
-        function executeCopy(text) {
-            let success = false;
-            
-            // Cách 1: Dùng Clipboard API
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(text);
-                success = true;
-            }
-            
-            // Cách 2: Ép copy qua input ẩn (Hỗ trợ Safari / iOS cực tốt)
-            const input = document.getElementById("hiddenCopyInput");
-            input.value = text;
-            input.focus();
-            input.select();
-            input.setSelectionRange(0, 99999);
-            
-            try {
-                if (document.execCommand("copy")) {
-                    success = true;
-                }
-            } catch (err) {}
-
-            return success;
-        }
-
-        // 2. NÚT COPY MAIL (Xử lý bất đồng bộ chuẩn xác)
+        // 2. NÚT COPY MAIL - XỬ LÝ TRUYỀN DỮ LIỆU ĐA TẦNG CHO CLIPBOARD
         let isProcessing = false;
 
         window.copyAndRemoveMail = function() {
             if (isProcessing) return;
-            
+
             const copyBtn = document.getElementById("getBtn");
             isProcessing = true;
             copyBtn.disabled = true;
 
+            // KỸ THUẬT QUAN TRỌNG: Tạo ClipboardItem gắn với Promise ngón tay nhấn
+            let copyResolver;
+            if (navigator.clipboard && window.ClipboardItem) {
+                const copyPromise = new Promise((resolve) => {
+                    copyResolver = resolve;
+                });
+                const item = new ClipboardItem({
+                    'text/plain': copyPromise.then(text => new Blob([text], { type: 'text/plain' }))
+                });
+                navigator.clipboard.write([item]).catch(() => {});
+            }
+
+            // Gửi yêu cầu xóa và lấy mail từ Firebase
             mailsRef.limitToFirst(1).once("value", (snapshot) => {
                 const data = snapshot.val();
                 if (!data) {
+                    if (copyResolver) copyResolver("");
                     showStatus("Hết mail!");
                     isProcessing = false;
                     copyBtn.disabled = false;
@@ -166,16 +150,21 @@
                     return;
                 }, (error, committed) => {
                     if (error || !committed) {
+                        if (copyResolver) copyResolver("");
                         isProcessing = false;
                         copyBtn.disabled = false;
-                        copyAndRemoveMail(); // Thử lại nếu bị máy khác lấy trước
+                        copyAndRemoveMail(); // Thử lại nếu trùng
                     } else {
-                        // Gọi lệnh copy ngay khi xóa thành công
-                        executeCopy(emailValue);
-                        
-                        // Hiển thị duy nhất nội dung Email bên dưới
+                        // Trả dữ liệu về cho ClipboardItem đã đăng ký sẵn từ trước
+                        if (copyResolver) {
+                            copyResolver(emailValue);
+                        } else if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(emailValue);
+                        }
+
+                        // Hiển thị ra màn hình (Giữ nguyên giao diện)
                         showStatus(emailValue);
-                        
+
                         isProcessing = false;
                         copyBtn.disabled = false;
                     }
