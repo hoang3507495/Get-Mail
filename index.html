@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Công Cụ Lấy Gmail Tự Xóa</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 30px auto; padding: 20px; line-height: 1.6; }
+        textarea { width: 100%; height: 180px; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #4CAF50; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; margin-top: 10px; }
+        button:hover { background-color: #45a049; }
+        .status { margin-top: 15px; padding: 10px; border-radius: 4px; display: none; word-break: break-all; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .count { font-weight: bold; color: #333; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>Quản Lý List Gmail (Click Copy & Auto Delete)</h2>
+    <p>Dán danh sách Gmail|Pass vào ô bên dưới (mỗi dòng 1 tài khoản):</p>
+    
+    <textarea id="listInput" placeholder="dinhvanA@gmail.com|pass123&#10;dinhvanB@gmail.com|pass456" oninput="updateCount()"></textarea>
+    
+    <div class="count">Số lượng còn lại: <span id="lineCount">0</span> dòng</div>
+    
+    <button onclick="copyAndRemove()">BẤM ĐỂ COPY DÒNG ĐẦU & XÓA</button>
+
+    <div id="statusBox" class="status"></div>
+
+    <script>
+        function updateCount() {
+            let text = document.getElementById("listInput").value.trim();
+            let lines = text ? text.split("\n") : [];
+            document.getElementById("lineCount").innerText = lines.length;
+        }
+
+        function copyAndRemove() {
+            let textarea = document.getElementById("listInput");
+            let lines = textarea.value.split("\n").filter(line => line.trim() !== "");
+
+            if (lines.length === 0) {
+                showStatus("Danh sách đã hết!", false);
+                return;
+            }
+
+            // Lấy dòng đầu tiên
+            let firstLine = lines.shift().trim();
+
+            // Sao chép vào bộ nhớ tạm (Clipboard)
+            navigator.clipboard.writeText(firstLine).then(() => {
+                // Cập nhật lại danh sách đã trừ dòng đầu
+                textarea.value = lines.join("\n");
+                updateCount();
+                showStatus("Đã copy: <b>" + firstLine + "</b> (Đã xóa khỏi danh sách)", true);
+            }).catch(err => {
+                showStatus("Lỗi khi copy: " + err, false);
+            });
+        }
+
+        function showStatus(msg, isSuccess) {
+            let statusBox = document.getElementById("statusBox");
+            statusBox.style.display = "block";
+            statusBox.className = "status " + (isSuccess ? "success" : "");
+            statusBox.innerHTML = msg;
+        }
+    </script>
+
+</body>
+</html>
