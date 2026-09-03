@@ -3,67 +3,209 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Công Cụ Lấy Gmail Tự Xóa</title>
+    <title>Mail Manager Hoangstm</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 600px; margin: 30px auto; padding: 20px; line-height: 1.6; }
-        textarea { width: 100%; height: 180px; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-        button { background-color: #4CAF50; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; margin-top: 10px; }
-        button:hover { background-color: #45a049; }
-        .status { margin-top: 15px; padding: 10px; border-radius: 4px; display: none; word-break: break-all; }
-        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .count { font-weight: bold; color: #333; margin-top: 10px; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #e9ecef;
+            margin: 0;
+            padding: 20px 15px;
+            color: #333;
+        }
+        .container {
+            max-width: 480px;
+            margin: 0 auto;
+        }
+        .header {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .header .brand {
+            color: #4361ee;
+        }
+        .count-text {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+        .yellow-bar {
+            background-color: #fff3bf;
+            height: 18px;
+            border-radius: 6px 6px 0 0;
+            border: 1px solid #ffe066;
+            border-bottom: none;
+        }
+        textarea {
+            width: 100%;
+            height: 220px;
+            padding: 12px;
+            box-sizing: border-box;
+            border: 1px solid #ced4da;
+            border-radius: 0 0 12px 12px;
+            font-size: 15px;
+            outline: none;
+            resize: vertical;
+            background-color: #ffffff;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            margin-bottom: 20px;
+        }
+        .btn {
+            border: none;
+            border-radius: 8px;
+            padding: 12px 0;
+            font-size: 15px;
+            font-weight: 600;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            transition: opacity 0.2s;
+        }
+        .btn:active {
+            opacity: 0.8;
+        }
+        .btn-add {
+            background-color: #3b5bdb;
+            flex: 1;
+        }
+        .btn-delete {
+            background-color: #3b5bdb;
+            flex: 1.3;
+        }
+        .btn-file {
+            background-color: #3b5bdb;
+            flex: 1.2;
+        }
+        .btn-copy-main {
+            width: 100%;
+            background-color: #3b5bdb;
+            padding: 16px 0;
+            font-size: 18px;
+            border-radius: 10px;
+            letter-spacing: 0.5px;
+        }
+        .status-msg {
+            margin-top: 12px;
+            font-size: 14px;
+            text-align: center;
+            font-weight: 500;
+            color: #2b8a3e;
+        }
     </style>
 </head>
 <body>
 
-    <h2>Quản Lý List Gmail (Click Copy & Auto Delete)</h2>
-    <p>Dán danh sách Gmail|Pass vào ô bên dưới (mỗi dòng 1 tài khoản):</p>
+<div class="container">
+    <div class="header">
+        📩 Mail Manager <span class="brand">Hoangstm</span>
+    </div>
     
-    <textarea id="listInput" placeholder="dinhvanA@gmail.com|pass123&#10;dinhvanB@gmail.com|pass456" oninput="updateCount()"></textarea>
-    
-    <div class="count">Số lượng còn lại: <span id="lineCount">0</span> dòng</div>
-    
-    <button onclick="copyAndRemove()">BẤM ĐỂ COPY DÒNG ĐẦU & XÓA</button>
+    <div class="count-text">Số mail: <span id="mailCount">0</span></div>
 
-    <div id="statusBox" class="status"></div>
+    <div class="yellow-bar"></div>
+    <textarea id="mailInput" placeholder="Dán danh sách mail vào đây..." oninput="updateCount()"></textarea>
 
-    <script>
-        function updateCount() {
-            let text = document.getElementById("listInput").value.trim();
-            let lines = text ? text.split("\n") : [];
-            document.getElementById("lineCount").innerText = lines.length;
+    <div class="btn-group">
+        <button class="btn btn-add" onclick="processAndAdd()">Add</button>
+        <button class="btn btn-delete" onclick="clearAll()">❌ Xóa tất cả</button>
+        <button class="btn btn-file" onclick="downloadFile()">⬇️ Tải file</button>
+    </div>
+
+    <button class="btn btn-copy-main" onclick="copyAndRemove()">🚀 COPY MAIL</button>
+
+    <div id="status" class="status-msg"></div>
+</div>
+
+<script>
+    function updateCount() {
+        let text = document.getElementById("mailInput").value.trim();
+        let lines = text ? text.split("\n").filter(line => line.trim() !== "") : [];
+        document.getElementById("mailCount").innerText = lines.length;
+    }
+
+    // Xử lý lọc lấy duy nhất Email đầu tiên trước ký tự |
+    function processAndAdd() {
+        let textarea = document.getElementById("mailInput");
+        let rawText = textarea.value;
+
+        if (!rawText.trim()) return;
+
+        let lines = rawText.split("\n");
+        let cleanMails = lines.map(line => {
+            let trimmed = line.trim();
+            if (!trimmed) return "";
+            // Tách theo dấu | và chỉ lấy phần tử đầu tiên
+            return trimmed.split("|")[0].trim();
+        }).filter(email => email !== "");
+
+        textarea.value = cleanMails.join("\n");
+        updateCount();
+        showStatus("Đã lọc và cập nhật danh sách Mail!");
+    }
+
+    // Nút Copy dòng đầu tiên và xóa khỏi list
+    function copyAndRemove() {
+        let textarea = document.getElementById("mailInput");
+        let lines = textarea.value.split("\n").filter(line => line.trim() !== "");
+
+        if (lines.length === 0) {
+            showStatus("Danh sách đã hết!");
+            return;
         }
 
-        function copyAndRemove() {
-            let textarea = document.getElementById("listInput");
-            let lines = textarea.value.split("\n").filter(line => line.trim() !== "");
+        let firstMail = lines.shift().trim();
 
-            if (lines.length === 0) {
-                showStatus("Danh sách đã hết!", false);
-                return;
-            }
+        navigator.clipboard.writeText(firstMail).then(() => {
+            textarea.value = lines.join("\n");
+            updateCount();
+            showStatus("Đã copy: " + firstMail);
+        }).catch(err => {
+            showStatus("Lỗi copy: " + err);
+        });
+    }
 
-            // Lấy dòng đầu tiên
-            let firstLine = lines.shift().trim();
-
-            // Sao chép vào bộ nhớ tạm (Clipboard)
-            navigator.clipboard.writeText(firstLine).then(() => {
-                // Cập nhật lại danh sách đã trừ dòng đầu
-                textarea.value = lines.join("\n");
-                updateCount();
-                showStatus("Đã copy: <b>" + firstLine + "</b> (Đã xóa khỏi danh sách)", true);
-            }).catch(err => {
-                showStatus("Lỗi khi copy: " + err, false);
-            });
+    // Nút Xóa tất cả
+    function clearAll() {
+        if (confirm("Bạn có chắc chắn muốn xóa toàn bộ danh sách?")) {
+            document.getElementById("mailInput").value = "";
+            updateCount();
+            showStatus("Đã xóa sạch danh sách!");
         }
+    }
 
-        function showStatus(msg, isSuccess) {
-            let statusBox = document.getElementById("statusBox");
-            statusBox.style.display = "block";
-            statusBox.className = "status " + (isSuccess ? "success" : "");
-            statusBox.innerHTML = msg;
+    // Nút Tải file text về máy
+    function downloadFile() {
+        let text = document.getElementById("mailInput").value;
+        if (!text.trim()) {
+            showStatus("Không có dữ liệu để tải về!");
+            return;
         }
-    </script>
+        let blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+        let a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "danh_sach_mail.txt";
+        a.click();
+    }
+
+    function showStatus(msg) {
+        let status = document.getElementById("status");
+        status.innerText = msg;
+        setTimeout(() => { status.innerText = ""; }, 3000);
+    }
+
+    // Khởi tạo đếm ban đầu
+    updateCount();
+</script>
 
 </body>
 </html>
