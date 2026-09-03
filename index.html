@@ -21,9 +21,40 @@
         .btn-add { flex: 1; }
         .btn-delete { flex: 1.3; }
         .btn-file { flex: 1.2; }
-        .btn-copy-main { width: 100%; background-color: #3b5bdb; color: white; padding: 16px 0; font-size: 18px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-copy-main { width: 100%; background-color: #3b5bdb; color: white; padding: 16px 0; font-size: 18px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; }
         .btn-copy-main:active { background-color: #2b44b6; transform: scale(0.98); }
-        .status-msg { margin-top: 12px; font-size: 20px; text-align: center; font-weight: 500; color: #2b8a3e; word-break: break-all; }
+        .btn-copy-main:disabled { background-color: #8296fd; cursor: not-allowed; }
+        
+        /* KHU VỰC HIỂN THỊ MAIL LỚN & CLICK ĐỂ COPY */
+        .mail-display-box { 
+            margin-top: 15px; 
+            padding: 14px 10px; 
+            background-color: #ffffff; 
+            border: 2px dashed #3b5bdb; 
+            border-radius: 10px; 
+            text-align: center; 
+            cursor: pointer; 
+            transition: all 0.2s;
+            display: none; /* Mặc định ẩn, khi có mail mới hiện */
+        }
+        .mail-display-box:active {
+            background-color: #dbe4ff;
+            transform: scale(0.98);
+        }
+        .mail-text { 
+            font-size: 20px; 
+            font-weight: bold; 
+            color: #2b8a3e; 
+            word-break: break-all; 
+            user-select: all; /* Dễ dàng chọn trên thiết bị di động */
+        }
+        .click-hint {
+            font-size: 12px;
+            color: #868e96;
+            margin-top: 4px;
+        }
+
+        .status-msg { margin-top: 12px; font-size: 15px; text-align: center; font-weight: bold; color: #495057; min-height: 22px; }
     </style>
 </head>
 <body>
@@ -44,11 +75,16 @@
 
     <button id="getBtn" class="btn-copy-main" onclick="copyAndRemoveMail()">🚀 COPY MAIL</button>
 
+    <!-- KHU VỰC HIỂN THỊ MAIL RÚT RA (TO & BẤM VÀO LÀ COPY) -->
+    <div id="mailBox" class="mail-display-box" onclick="copyCurrentMail()">
+        <div id="mailDisplay" class="mail-text">---</div>
+        <div class="click-hint">👉 Bấm vào đây để Copy lại mail này</div>
+    </div>
+
     <div id="status" class="status-msg">Đang kết nối Firebase...</div>
 </div>
 
 <script>
-    // Cấu hình Firebase đã được tích hợp sẵn
     const firebaseConfig = {
       apiKey: "AIzaSyCCNUbvDucT2jrpm1lIhjpFxKD-kR7Ebe8",
       authDomain: "mailmanager-6d165.firebaseapp.com",
@@ -60,6 +96,9 @@
       measurementId: "G-WBKT08PZYZ"
     };
 
+    let isProcessing = false;
+    let currentMailText = "";
+
     try {
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
@@ -68,22 +107,22 @@
         const db = firebase.database();
         const mailsRef = db.ref("mails");
 
-        // Lắng nghe dữ liệu thời gian thực
+        // Lắng nghe số lượng mail thời gian thực
         mailsRef.on("value", (snapshot) => {
             const data = snapshot.val();
-            if (data) {
-                const count = Object.keys(data).length;
-                document.getElementById("mailCount").innerText = count;
+            const count = data ? Object.keys(data).length : 0;
+            document.getElementById("mailCount").innerText = count;
+
+            if (count > 0) {
                 showStatus("✅ Đã kết nối! Sẵn sàng sử dụng.");
             } else {
-                document.getElementById("mailCount").innerText = "0";
                 showStatus("✅ Đã kết nối! Cơ sở dữ liệu trống.");
             }
         }, (error) => {
             showStatus("❌ Lỗi kết nối Firebase: " + error.message);
         });
 
-        // 1. NÚT ADD: Tự lấy mail trước dấu |
+        // 1. NÚT ADD
         window.addMails = function() {
             const textarea = document.getElementById("mailInput");
             let rawText = textarea.value.trim();
@@ -118,40 +157,90 @@
                 .catch(err => showStatus("❌ Lỗi thêm mail: " + err.message));
         };
 
-        // 2. NÚT COPY MAIL: Rút 1 mail ra, copy và xóa trên Firebase
+        // 2. NÚT COPY MAIL - TRANSACTION KHÔNG TRÙNG GIỮA NHIỀU MÁY
         window.copyAndRemoveMail = function() {
+            if (isProcessing) return;
+
+            isProcessing = true;
+            const btn = document.getElementById("getBtn");
+            btn.disabled = true;
+
             mailsRef.limitToFirst(1).once("value", (snapshot) => {
                 const data = snapshot.val();
                 if (!data) {
                     showStatus("❌ Hết mail trên hệ thống!");
+                    isProcessing = false;
+                    btn.disabled = false;
                     return;
                 }
 
                 const key = Object.keys(data)[0];
-                const email = data[key];
+                const targetRef = mailsRef.child(key);
 
-                navigator.clipboard.writeText(email).then(() => {
-                    mailsRef.child(key).remove();
-                    showStatus(email);
-                }).catch(() => {
-                    showStatus("❌ Lỗi copy vào bộ nhớ tạm!");
+                // Transaction khóa và rút mail độc quyền
+                targetRef.transaction((currentValue) => {
+                    if (currentValue !== null) {
+                        return null; // Xóa mail trên Server
+                    }
+                    return; // Mail đã bị máy khác xóa -> Hủy
+                }, (error, committed, snapshot) => {
+                    if (error) {
+                        showStatus("❌ Lỗi hệ thống: " + error.message);
+                        isProcessing = false;
+                        btn.disabled = false;
+                    } else if (!committed) {
+                        // Thử lại nếu bị máy khác nhanh tay lấy mất
+                        isProcessing = false;
+                        btn.disabled = false;
+                        copyAndRemoveMail(); 
+                    } else {
+                        // Lấy mail thành công!
+                        const email = snapshot.val();
+                        currentMailText = email;
+
+                        // Hiển thị khung Mail to rõ ràng
+                        document.getElementById("mailDisplay").innerText = email;
+                        document.getElementById("mailBox").style.display = "block";
+
+                        // Tự động Copy vào khay nhớ tạm
+                        navigator.clipboard.writeText(email).then(() => {
+                            showStatus("✅ Đã tự động Copy vào bộ nhớ!");
+                        }).catch(() => {
+                            showStatus("👉 Bấm vào khung mail ở trên để copy!");
+                        }).finally(() => {
+                            isProcessing = false;
+                            btn.disabled = false;
+                        });
+                    }
                 });
             });
         };
 
-        // 3. NÚT XÓA TẤT CẢ
+        // 3. BẤM VÀO KHUNG MAIL ĐỂ COPY LAI
+        window.copyCurrentMail = function() {
+            if (!currentMailText) return;
+            navigator.clipboard.writeText(currentMailText).then(() => {
+                showStatus("📋 Đã Copy lại: " + currentMailText);
+            }).catch(() => {
+                showStatus("❌ Không thể copy!");
+            });
+        };
+
+        // 4. NÚT XÓA TẤT CẢ
         window.clearAllMails = function() {
             if (confirm("Bạn có chắc chắn muốn xóa tất cả mail trên hệ thống?")) {
                 mailsRef.remove()
                     .then(() => {
                         document.getElementById("mailInput").value = "";
+                        document.getElementById("mailBox").style.display = "none";
+                        currentMailText = "";
                         showStatus("✅ Đã xóa sạch mail!");
                     })
                     .catch(err => showStatus("❌ Lỗi: " + err.message));
             }
         };
 
-        // 4. NÚT TẢI FILE
+        // 5. NÚT TẢI FILE
         window.downloadFile = function() {
             let text = document.getElementById("mailInput").value;
             if (!text.trim()) {
@@ -176,3 +265,4 @@
 
 </body>
 </html>
+
