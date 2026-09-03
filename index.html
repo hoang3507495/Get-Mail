@@ -25,6 +25,7 @@
         .btn-copy-main:active { background-color: #2b44b6; transform: scale(0.98); }
         .btn-copy-main:disabled { background-color: #adb5bd; cursor: not-allowed; }
         .status-msg { margin-top: 15px; font-size: 18px; text-align: center; font-weight: bold; color: #2b8a3e; word-break: break-all; min-height: 24px; }
+        #hiddenCopyInput { position: absolute; left: -9999px; top: -9999px; opacity: 0; }
     </style>
 </head>
 <body>
@@ -47,6 +48,9 @@
 
     <div id="status" class="status-msg"></div>
 </div>
+
+<!-- Input ẩn hỗ trợ Copy cho iOS / Safari -->
+<input type="text" id="hiddenCopyInput" readonly>
 
 <script>
     // Cấu hình Firebase
@@ -73,14 +77,13 @@
         mailsRef.on("value", (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                const count = Object.keys(data).length;
-                document.getElementById("mailCount").innerText = count;
+                document.getElementById("mailCount").innerText = Object.keys(data).length;
             } else {
                 document.getElementById("mailCount").innerText = "0";
             }
         });
 
-        // 1. NÚT ADD: Tự lấy mail trước dấu |
+        // 1. NÚT ADD
         window.addMails = function() {
             const textarea = document.getElementById("mailInput");
             let rawText = textarea.value.trim();
@@ -108,7 +111,33 @@
             });
         };
 
-        // 2. NÚT COPY MAIL: SỬA LỖI NULL & CHỈ HIỂN THỊ DÒNG MAIL
+        // Hàm xử lý Copy vượt rào cản bảo mật di động
+        function executeCopy(text) {
+            let success = false;
+            
+            // Cách 1: Dùng Clipboard API
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text);
+                success = true;
+            }
+            
+            // Cách 2: Ép copy qua input ẩn (Hỗ trợ Safari / iOS cực tốt)
+            const input = document.getElementById("hiddenCopyInput");
+            input.value = text;
+            input.focus();
+            input.select();
+            input.setSelectionRange(0, 99999);
+            
+            try {
+                if (document.execCommand("copy")) {
+                    success = true;
+                }
+            } catch (err) {}
+
+            return success;
+        }
+
+        // 2. NÚT COPY MAIL (Xử lý bất đồng bộ chuẩn xác)
         let isProcessing = false;
 
         window.copyAndRemoveMail = function() {
@@ -118,7 +147,6 @@
             isProcessing = true;
             copyBtn.disabled = true;
 
-            // Lấy ra ID và giá trị mail đầu tiên
             mailsRef.limitToFirst(1).once("value", (snapshot) => {
                 const data = snapshot.val();
                 if (!data) {
@@ -129,9 +157,8 @@
                 }
 
                 const targetKey = Object.keys(data)[0];
-                const emailValue = data[targetKey]; // Lưu sẵn giá trị Mail
+                const emailValue = data[targetKey];
 
-                // Thực hiện Transaction để xóa an toàn chống trùng
                 db.ref("mails/" + targetKey).transaction((currentValue) => {
                     if (currentValue !== null) {
                         return null; // Xóa khỏi DB
@@ -139,17 +166,14 @@
                     return;
                 }, (error, committed) => {
                     if (error || !committed) {
-                        // Nếu bị máy khác tranh mất, tự gọi lại để lấy mail tiếp theo
                         isProcessing = false;
                         copyBtn.disabled = false;
-                        copyAndRemoveMail();
+                        copyAndRemoveMail(); // Thử lại nếu bị máy khác lấy trước
                     } else {
-                        // Tự động Copy vào bộ nhớ tạm
-                        if (navigator.clipboard && navigator.clipboard.writeText) {
-                            navigator.clipboard.writeText(emailValue);
-                        }
+                        // Gọi lệnh copy ngay khi xóa thành công
+                        executeCopy(emailValue);
                         
-                        // CHỈ HIỂN THỊ DUY NHẤT EMAIL RA MÀN HÌNH
+                        // Hiển thị duy nhất nội dung Email bên dưới
                         showStatus(emailValue);
                         
                         isProcessing = false;
@@ -181,7 +205,7 @@
         };
 
     } catch (e) {
-        showStatus("Lỗi khởi tạo");
+        showStatus("Lỗi kết nối");
     }
 
     function showStatus(msg) {
