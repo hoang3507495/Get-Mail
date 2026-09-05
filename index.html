@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mail Manager Hoangstm</title>
-    <!-- Nhúng thư viện Firebase -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
@@ -49,7 +48,6 @@
 </div>
 
 <script>
-    // Cấu hình Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyCCNUbvDucT2jrpm1lIhjpFxKD-kR7Ebe8",
       authDomain: "mailmanager-6d165.firebaseapp.com",
@@ -69,7 +67,6 @@
         const db = firebase.database();
         const mailsRef = db.ref("mails");
 
-        // Đồng bộ số lượng mail
         mailsRef.on("value", (snapshot) => {
             const data = snapshot.val();
             if (data) {
@@ -79,11 +76,9 @@
             }
         });
 
-        // 1. NÚT ADD
         window.addMails = function() {
             const textarea = document.getElementById("mailInput");
             let rawText = textarea.value.trim();
-
             if (!rawText) return;
 
             let lines = rawText.split("\n");
@@ -107,7 +102,6 @@
             });
         };
 
-        // 2. NÚT COPY MAIL - XỬ LÝ TRUYỀN DỮ LIỆU ĐA TẦNG CHO CLIPBOARD
         let isProcessing = false;
 
         window.copyAndRemoveMail = function() {
@@ -117,23 +111,31 @@
             isProcessing = true;
             copyBtn.disabled = true;
 
-            // KỸ THUẬT QUAN TRỌNG: Tạo ClipboardItem gắn với Promise ngón tay nhấn
-            let copyResolver;
+            // BƯỚC QUAN TRỌNG: Đăng ký Clipboard ngay khi bấm nút (Chống trình duyệt chặn do Lag VPN)
+            let resolveCopy;
+            let rejectCopy;
+            
             if (navigator.clipboard && window.ClipboardItem) {
-                const copyPromise = new Promise((resolve) => {
-                    copyResolver = resolve;
+                const copyPromise = new Promise((resolve, reject) => {
+                    resolveCopy = resolve;
+                    rejectCopy = reject;
                 });
-                const item = new ClipboardItem({
+
+                const clipboardItem = new ClipboardItem({
                     'text/plain': copyPromise.then(text => new Blob([text], { type: 'text/plain' }))
                 });
-                navigator.clipboard.write([item]).catch(() => {});
+
+                // Ép trình duyệt cấp quyền Copy ngay lập tức
+                navigator.clipboard.write([clipboardItem]).catch(err => {
+                    console.log("Clipboard write deferral error:", err);
+                });
             }
 
-            // Gửi yêu cầu xóa và lấy mail từ Firebase
+            // Tiến hành xử lý Firebase bất đồng bộ qua VPN
             mailsRef.limitToFirst(1).once("value", (snapshot) => {
                 const data = snapshot.val();
                 if (!data) {
-                    if (copyResolver) copyResolver("");
+                    if (resolveCopy) resolveCopy("");
                     showStatus("Hết mail!");
                     isProcessing = false;
                     copyBtn.disabled = false;
@@ -145,26 +147,24 @@
 
                 db.ref("mails/" + targetKey).transaction((currentValue) => {
                     if (currentValue !== null) {
-                        return null; // Xóa khỏi DB
+                        return null;
                     }
                     return;
                 }, (error, committed) => {
                     if (error || !committed) {
-                        if (copyResolver) copyResolver("");
+                        if (rejectCopy) rejectCopy();
                         isProcessing = false;
                         copyBtn.disabled = false;
                         copyAndRemoveMail(); // Thử lại nếu trùng
                     } else {
-                        // Trả dữ liệu về cho ClipboardItem đã đăng ký sẵn từ trước
-                        if (copyResolver) {
-                            copyResolver(emailValue);
+                        // Đưa dữ liệu mail vào Promise đã tạo từ đầu
+                        if (resolveCopy) {
+                            resolveCopy(emailValue);
                         } else if (navigator.clipboard && navigator.clipboard.writeText) {
                             navigator.clipboard.writeText(emailValue);
                         }
 
-                        // Hiển thị ra màn hình (Giữ nguyên giao diện)
                         showStatus(emailValue);
-
                         isProcessing = false;
                         copyBtn.disabled = false;
                     }
@@ -172,7 +172,6 @@
             });
         };
 
-        // 3. NÚT XÓA TẤT CẢ
         window.clearAllMails = function() {
             if (confirm("Xóa toàn bộ mail?")) {
                 mailsRef.remove().then(() => {
@@ -182,7 +181,6 @@
             }
         };
 
-        // 4. NÚT TẢI FILE
         window.downloadFile = function() {
             let text = document.getElementById("mailInput").value;
             if (!text.trim()) return;
