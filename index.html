@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mail Manager Hoangstm</title>
+    <!-- Nhúng thư viện Firebase -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
@@ -23,7 +24,20 @@
         .btn-copy-main { width: 100%; background-color: #3b5bdb; color: white; padding: 16px 0; font-size: 18px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-copy-main:active { background-color: #2b44b6; transform: scale(0.98); }
         .btn-copy-main:disabled { background-color: #adb5bd; cursor: not-allowed; }
-        .status-msg { margin-top: 15px; font-size: 18px; text-align: center; font-weight: bold; color: #2b8a3e; word-break: break-all; min-height: 24px; user-select: all; -webkit-user-select: all; }
+        
+        /* Ô hiển thị Email đầu ra dạng Input tự bôi đen */
+        .status-input {
+            width: 100%;
+            margin-top: 15px;
+            font-size: 18px;
+            text-align: center;
+            font-weight: bold;
+            color: #2b8a3e;
+            border: none;
+            background: transparent;
+            outline: none;
+            box-sizing: border-box;
+        }
     </style>
 </head>
 <body>
@@ -44,7 +58,8 @@
 
     <button id="getBtn" class="btn-copy-main" onclick="copyAndRemoveMail()">🚀 COPY MAIL</button>
 
-    <div id="status" class="status-msg"></div>
+    <!-- Ô hiển thị Mail thu gọn đúng chuẩn giao diện cũ -->
+    <input type="text" id="status" class="status-input" readonly onclick="this.select(); focusAndCopy(this.value);" />
 </div>
 
 <script>
@@ -103,42 +118,44 @@
         };
 
         let isProcessing = false;
+        let lastCopiedMail = "";
+
+        // Hàm hỗ trợ Copy trực tiếp khi tương tác người dùng
+        function focusAndCopy(text) {
+            if (!text || text.includes("Đã thêm") || text.includes("Hết mail")) return;
+            const statusInput = document.getElementById("status");
+            statusInput.focus();
+            statusInput.select();
+            statusInput.setSelectionRange(0, 99999);
+            try {
+                document.execCommand("copy");
+            } catch(e) {}
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text);
+            }
+        }
 
         window.copyAndRemoveMail = function() {
+            // Nếu bấm lần nữa khi chưa bấm mail mới -> Copy lại mail vừa lấy
+            if (!isProcessing && lastCopiedMail) {
+                focusAndCopy(lastCopiedMail);
+            }
+
             if (isProcessing) return;
 
             const copyBtn = document.getElementById("getBtn");
             isProcessing = true;
             copyBtn.disabled = true;
+            copyBtn.innerText = "⏳ Đang lấy mail...";
 
-            // BƯỚC QUAN TRỌNG: Đăng ký Clipboard ngay khi bấm nút (Chống trình duyệt chặn do Lag VPN)
-            let resolveCopy;
-            let rejectCopy;
-            
-            if (navigator.clipboard && window.ClipboardItem) {
-                const copyPromise = new Promise((resolve, reject) => {
-                    resolveCopy = resolve;
-                    rejectCopy = reject;
-                });
-
-                const clipboardItem = new ClipboardItem({
-                    'text/plain': copyPromise.then(text => new Blob([text], { type: 'text/plain' }))
-                });
-
-                // Ép trình duyệt cấp quyền Copy ngay lập tức
-                navigator.clipboard.write([clipboardItem]).catch(err => {
-                    console.log("Clipboard write deferral error:", err);
-                });
-            }
-
-            // Tiến hành xử lý Firebase bất đồng bộ qua VPN
+            // Thao tác xóa và lấy Mail từ Firebase
             mailsRef.limitToFirst(1).once("value", (snapshot) => {
                 const data = snapshot.val();
                 if (!data) {
-                    if (resolveCopy) resolveCopy("");
                     showStatus("Hết mail!");
                     isProcessing = false;
                     copyBtn.disabled = false;
+                    copyBtn.innerText = "🚀 COPY MAIL";
                     return;
                 }
 
@@ -147,26 +164,25 @@
 
                 db.ref("mails/" + targetKey).transaction((currentValue) => {
                     if (currentValue !== null) {
-                        return null;
+                        return null; // Xóa mail khỏi DB
                     }
                     return;
                 }, (error, committed) => {
                     if (error || !committed) {
-                        if (rejectCopy) rejectCopy();
                         isProcessing = false;
                         copyBtn.disabled = false;
-                        copyAndRemoveMail(); // Thử lại nếu trùng
+                        copyBtn.innerText = "🚀 COPY MAIL";
+                        copyAndRemoveMail(); // Thử lại nếu trùng key
                     } else {
-                        // Đưa dữ liệu mail vào Promise đã tạo từ đầu
-                        if (resolveCopy) {
-                            resolveCopy(emailValue);
-                        } else if (navigator.clipboard && navigator.clipboard.writeText) {
-                            navigator.clipboard.writeText(emailValue);
-                        }
-
+                        lastCopiedMail = emailValue;
                         showStatus(emailValue);
+
+                        // Thực hiện copy
+                        focusAndCopy(emailValue);
+
                         isProcessing = false;
                         copyBtn.disabled = false;
+                        copyBtn.innerText = "✅ ĐÃ COPY! (Bấm để copy lại)";
                     }
                 });
             });
@@ -177,6 +193,8 @@
                 mailsRef.remove().then(() => {
                     document.getElementById("mailInput").value = "";
                     showStatus("");
+                    lastCopiedMail = "";
+                    document.getElementById("getBtn").innerText = "🚀 COPY MAIL";
                 });
             }
         };
@@ -196,7 +214,9 @@
     }
 
     function showStatus(msg) {
-        document.getElementById("status").innerText = msg;
+        const statusEl = document.getElementById("status");
+        statusEl.value = msg;
+        statusEl.select();
     }
 </script>
 
