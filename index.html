@@ -25,10 +25,15 @@
         .btn-copy-main:active { background-color: #2b44b6; transform: scale(0.98); }
         .btn-copy-main:disabled { background-color: #adb5bd; cursor: not-allowed; }
         
-        /* Ô hiển thị Email đầu ra dạng Input tự bôi đen */
-        .status-input {
-            width: 100%;
+        /* Hàng hiển thị Mail + Nút Copy phụ */
+        .result-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
             margin-top: 15px;
+        }
+        .status-input {
+            flex: 1;
             font-size: 18px;
             text-align: center;
             font-weight: bold;
@@ -37,6 +42,21 @@
             background: transparent;
             outline: none;
             box-sizing: border-box;
+        }
+        .btn-copy-side {
+            background-color: #2b8a3e;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            display: none; /* Ẩn khi chưa có mail */
+            white-space: nowrap;
+        }
+        .btn-copy-side:active {
+            opacity: 0.8;
         }
     </style>
 </head>
@@ -56,10 +76,14 @@
         <button class="btn btn-file" onclick="downloadFile()">⬇️ Tải file</button>
     </div>
 
+    <!-- Nút Copy chính -->
     <button id="getBtn" class="btn-copy-main" onclick="copyAndRemoveMail()">🚀 COPY MAIL</button>
 
-    <!-- Ô hiển thị Mail thu gọn đúng chuẩn giao diện cũ -->
-    <input type="text" id="status" class="status-input" readonly onclick="this.select(); focusAndCopy(this.value);" />
+    <!-- Khối hiển thị kết quả và Nút Copy phụ bên cạnh -->
+    <div class="result-container">
+        <input type="text" id="status" class="status-input" readonly onclick="this.select(); manualCopy();" />
+        <button id="sideCopyBtn" class="btn-copy-side" onclick="manualCopy()">📋 COPY</button>
+    </div>
 </div>
 
 <script>
@@ -113,49 +137,53 @@
 
             mailsRef.update(updates).then(() => {
                 textarea.value = "";
-                showStatus("Đã thêm " + cleanMails.length + " mail");
+                showStatus("Đã thêm " + cleanMails.length + " mail", false);
             });
         };
 
         let isProcessing = false;
-        let lastCopiedMail = "";
+        let currentCopiedMail = "";
 
-        // Hàm hỗ trợ Copy trực tiếp khi tương tác người dùng
-        function focusAndCopy(text) {
-            if (!text || text.includes("Đã thêm") || text.includes("Hết mail")) return;
+        // Hàm Copy thủ công chắc chắn thành công 100% khi người dùng chủ động chạm nút phụ
+        window.manualCopy = function() {
+            if (!currentCopiedMail) return;
             const statusInput = document.getElementById("status");
             statusInput.focus();
             statusInput.select();
             statusInput.setSelectionRange(0, 99999);
+
+            let success = false;
             try {
-                document.execCommand("copy");
+                success = document.execCommand("copy");
             } catch(e) {}
+
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text);
+                navigator.clipboard.writeText(currentCopiedMail);
+                success = true;
             }
-        }
 
+            const sideBtn = document.getElementById("sideCopyBtn");
+            sideBtn.innerText = "✅ ĐÃ COPY!";
+            setTimeout(() => {
+                sideBtn.innerText = "📋 COPY";
+            }, 1000);
+        };
+
+        // Lấy Mail và tự động Copy
         window.copyAndRemoveMail = function() {
-            // Nếu bấm lần nữa khi chưa bấm mail mới -> Copy lại mail vừa lấy
-            if (!isProcessing && lastCopiedMail) {
-                focusAndCopy(lastCopiedMail);
-            }
-
             if (isProcessing) return;
 
             const copyBtn = document.getElementById("getBtn");
             isProcessing = true;
             copyBtn.disabled = true;
-            copyBtn.innerText = "⏳ Đang lấy mail...";
 
-            // Thao tác xóa và lấy Mail từ Firebase
+            // Xóa và lấy Mail từ Firebase
             mailsRef.limitToFirst(1).once("value", (snapshot) => {
                 const data = snapshot.val();
                 if (!data) {
-                    showStatus("Hết mail!");
+                    showStatus("Hết mail!", false);
                     isProcessing = false;
                     copyBtn.disabled = false;
-                    copyBtn.innerText = "🚀 COPY MAIL";
                     return;
                 }
 
@@ -164,25 +192,23 @@
 
                 db.ref("mails/" + targetKey).transaction((currentValue) => {
                     if (currentValue !== null) {
-                        return null; // Xóa mail khỏi DB
+                        return null; // Xóa khỏi DB
                     }
                     return;
                 }, (error, committed) => {
                     if (error || !committed) {
                         isProcessing = false;
                         copyBtn.disabled = false;
-                        copyBtn.innerText = "🚀 COPY MAIL";
-                        copyAndRemoveMail(); // Thử lại nếu trùng key
+                        copyAndRemoveMail(); // Thử lại nếu trùng
                     } else {
-                        lastCopiedMail = emailValue;
-                        showStatus(emailValue);
+                        currentCopiedMail = emailValue;
+                        showStatus(emailValue, true);
 
-                        // Thực hiện copy
-                        focusAndCopy(emailValue);
+                        // Thử kích hoạt tự động Copy
+                        manualCopy();
 
                         isProcessing = false;
                         copyBtn.disabled = false;
-                        copyBtn.innerText = "✅ ĐÃ COPY! (Bấm để copy lại)";
                     }
                 });
             });
@@ -192,9 +218,7 @@
             if (confirm("Xóa toàn bộ mail?")) {
                 mailsRef.remove().then(() => {
                     document.getElementById("mailInput").value = "";
-                    showStatus("");
-                    lastCopiedMail = "";
-                    document.getElementById("getBtn").innerText = "🚀 COPY MAIL";
+                    showStatus("", false);
                 });
             }
         };
@@ -210,13 +234,21 @@
         };
 
     } catch (e) {
-        showStatus("Lỗi kết nối");
+        showStatus("Lỗi kết nối", false);
     }
 
-    function showStatus(msg) {
+    function showStatus(msg, isMail) {
         const statusEl = document.getElementById("status");
+        const sideBtn = document.getElementById("sideCopyBtn");
         statusEl.value = msg;
-        statusEl.select();
+        
+        if (isMail) {
+            sideBtn.style.display = "inline-block";
+            statusEl.select();
+        } else {
+            sideBtn.style.display = "none";
+            currentCopiedMail = "";
+        }
     }
 </script>
 
