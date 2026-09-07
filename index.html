@@ -52,11 +52,19 @@
             font-size: 14px;
             font-weight: bold;
             cursor: pointer;
-            display: none; /* Ẩn khi chưa có mail */
+            visibility: hidden; /* Dùng visibility để tránh lỗi focus DOM */
             white-space: nowrap;
         }
         .btn-copy-side:active {
             opacity: 0.8;
+        }
+
+        /* Input ẩn chuyên copy */
+        #hiddenCopyInput {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            opacity: 0;
         }
     </style>
 </head>
@@ -79,12 +87,15 @@
     <!-- Nút Copy chính -->
     <button id="getBtn" class="btn-copy-main" onclick="copyAndRemoveMail()">🚀 COPY MAIL</button>
 
-    <!-- Khối hiển thị kết quả và Nút Copy phụ bên cạnh -->
+    <!-- Khối hiển thị kết quả và Nút Copy phụ -->
     <div class="result-container">
-        <input type="text" id="status" class="status-input" readonly onclick="this.select(); manualCopy();" />
+        <input type="text" id="status" class="status-input" readonly onclick="this.select(); executeCopy(this.value);" />
         <button id="sideCopyBtn" class="btn-copy-side" onclick="manualCopy()">📋 COPY</button>
     </div>
 </div>
+
+<!-- Input ẩn chuyên phục vụ Copy trên thiết bị di động -->
+<input type="text" id="hiddenCopyInput" readonly>
 
 <script>
     const firebaseConfig = {
@@ -144,23 +155,34 @@
         let isProcessing = false;
         let currentCopiedMail = "";
 
-        // Hàm Copy thủ công chắc chắn thành công 100% khi người dùng chủ động chạm nút phụ
+        // Hàm thực thi Copy đa nền tảng
+        function executeCopy(text) {
+            if (!text || text.includes("Đã thêm") || text.includes("Hết mail")) return false;
+
+            // Cách 1: Clipboard API chuẩn
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).catch(() => {});
+            }
+
+            // Cách 2: Ép qua input ẩn (Hỗ trợ Safari & Điện thoại chuẩn nhất)
+            const hiddenInput = document.getElementById("hiddenCopyInput");
+            hiddenInput.value = text;
+            hiddenInput.focus();
+            hiddenInput.select();
+            hiddenInput.setSelectionRange(0, 99999);
+
+            let result = false;
+            try {
+                result = document.execCommand("copy");
+            } catch (err) {}
+
+            return result;
+        }
+
+        // Bấm nút phụ để Copy thủ công
         window.manualCopy = function() {
             if (!currentCopiedMail) return;
-            const statusInput = document.getElementById("status");
-            statusInput.focus();
-            statusInput.select();
-            statusInput.setSelectionRange(0, 99999);
-
-            let success = false;
-            try {
-                success = document.execCommand("copy");
-            } catch(e) {}
-
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(currentCopiedMail);
-                success = true;
-            }
+            executeCopy(currentCopiedMail);
 
             const sideBtn = document.getElementById("sideCopyBtn");
             sideBtn.innerText = "✅ ĐÃ COPY!";
@@ -177,7 +199,6 @@
             isProcessing = true;
             copyBtn.disabled = true;
 
-            // Xóa và lấy Mail từ Firebase
             mailsRef.limitToFirst(1).once("value", (snapshot) => {
                 const data = snapshot.val();
                 if (!data) {
@@ -199,13 +220,13 @@
                     if (error || !committed) {
                         isProcessing = false;
                         copyBtn.disabled = false;
-                        copyAndRemoveMail(); // Thử lại nếu trùng
+                        copyAndRemoveMail(); // Thử lại nếu bị trùng
                     } else {
                         currentCopiedMail = emailValue;
                         showStatus(emailValue, true);
 
-                        // Thử kích hoạt tự động Copy
-                        manualCopy();
+                        // Gọi Copy ngay
+                        executeCopy(emailValue);
 
                         isProcessing = false;
                         copyBtn.disabled = false;
@@ -243,10 +264,10 @@
         statusEl.value = msg;
         
         if (isMail) {
-            sideBtn.style.display = "inline-block";
+            sideBtn.style.visibility = "visible";
             statusEl.select();
         } else {
-            sideBtn.style.display = "none";
+            sideBtn.style.visibility = "hidden";
             currentCopiedMail = "";
         }
     }
