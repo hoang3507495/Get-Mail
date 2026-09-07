@@ -24,48 +24,7 @@
         .btn-copy-main { width: 100%; background-color: #3b5bdb; color: white; padding: 16px 0; font-size: 18px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-copy-main:active { background-color: #2b44b6; transform: scale(0.98); }
         .btn-copy-main:disabled { background-color: #adb5bd; cursor: not-allowed; }
-        
-        /* Hàng hiển thị Mail + Nút Copy phụ */
-        .result-container {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-top: 15px;
-        }
-        .status-input {
-            flex: 1;
-            font-size: 18px;
-            text-align: center;
-            font-weight: bold;
-            color: #2b8a3e;
-            border: none;
-            background: transparent;
-            outline: none;
-            box-sizing: border-box;
-        }
-        .btn-copy-side {
-            background-color: #2b8a3e;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 8px 12px;
-            font-size: 14px;
-            font-weight: bold;
-            cursor: pointer;
-            visibility: hidden; /* Dùng visibility để tránh lỗi focus DOM */
-            white-space: nowrap;
-        }
-        .btn-copy-side:active {
-            opacity: 0.8;
-        }
-
-        /* Input ẩn chuyên copy */
-        #hiddenCopyInput {
-            position: absolute;
-            left: -9999px;
-            top: -9999px;
-            opacity: 0;
-        }
+        .status-msg { margin-top: 15px; font-size: 18px; text-align: center; font-weight: bold; color: #2b8a3e; word-break: break-all; min-height: 24px; }
     </style>
 </head>
 <body>
@@ -84,18 +43,11 @@
         <button class="btn btn-file" onclick="downloadFile()">⬇️ Tải file</button>
     </div>
 
-    <!-- Nút Copy chính -->
+    <!-- Nút Copy chuẩn duy nhất -->
     <button id="getBtn" class="btn-copy-main" onclick="copyAndRemoveMail()">🚀 COPY MAIL</button>
 
-    <!-- Khối hiển thị kết quả và Nút Copy phụ -->
-    <div class="result-container">
-        <input type="text" id="status" class="status-input" readonly onclick="this.select(); executeCopy(this.value);" />
-        <button id="sideCopyBtn" class="btn-copy-side" onclick="manualCopy()">📋 COPY</button>
-    </div>
+    <div id="status" class="status-msg"></div>
 </div>
-
-<!-- Input ẩn chuyên phục vụ Copy trên thiết bị di động -->
-<input type="text" id="hiddenCopyInput" readonly>
 
 <script>
     const firebaseConfig = {
@@ -148,50 +100,12 @@
 
             mailsRef.update(updates).then(() => {
                 textarea.value = "";
-                showStatus("Đã thêm " + cleanMails.length + " mail", false);
+                showStatus("Đã thêm " + cleanMails.length + " mail");
             });
         };
 
         let isProcessing = false;
-        let currentCopiedMail = "";
 
-        // Hàm thực thi Copy đa nền tảng
-        function executeCopy(text) {
-            if (!text || text.includes("Đã thêm") || text.includes("Hết mail")) return false;
-
-            // Cách 1: Clipboard API chuẩn
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(text).catch(() => {});
-            }
-
-            // Cách 2: Ép qua input ẩn (Hỗ trợ Safari & Điện thoại chuẩn nhất)
-            const hiddenInput = document.getElementById("hiddenCopyInput");
-            hiddenInput.value = text;
-            hiddenInput.focus();
-            hiddenInput.select();
-            hiddenInput.setSelectionRange(0, 99999);
-
-            let result = false;
-            try {
-                result = document.execCommand("copy");
-            } catch (err) {}
-
-            return result;
-        }
-
-        // Bấm nút phụ để Copy thủ công
-        window.manualCopy = function() {
-            if (!currentCopiedMail) return;
-            executeCopy(currentCopiedMail);
-
-            const sideBtn = document.getElementById("sideCopyBtn");
-            sideBtn.innerText = "✅ ĐÃ COPY!";
-            setTimeout(() => {
-                sideBtn.innerText = "📋 COPY";
-            }, 1000);
-        };
-
-        // Lấy Mail và tự động Copy
         window.copyAndRemoveMail = function() {
             if (isProcessing) return;
 
@@ -199,10 +113,33 @@
             isProcessing = true;
             copyBtn.disabled = true;
 
+            // BƯỚC THEN CHỐNG CHẶN COPY KHI BẬT VPN:
+            // Đăng ký cấp quyền Clipboard ngay lập tức khi ngón tay bấm nút
+            let resolveMailPromise;
+            let rejectMailPromise;
+
+            if (navigator.clipboard && window.ClipboardItem) {
+                const mailPromise = new Promise((resolve, reject) => {
+                    resolveMailPromise = resolve;
+                    rejectMailPromise = reject;
+                });
+
+                // Xí chỗ trước với trình duyệt
+                const item = new ClipboardItem({
+                    'text/plain': mailPromise.then(text => new Blob([text], { type: 'text/plain' }))
+                });
+
+                navigator.clipboard.write([item]).catch(e => {
+                    console.log("Clipboard pre-authorization error:", e);
+                });
+            }
+
+            // Gọi Firebase lấy mail bất đồng bộ qua VPN
             mailsRef.limitToFirst(1).once("value", (snapshot) => {
                 const data = snapshot.val();
                 if (!data) {
-                    showStatus("Hết mail!", false);
+                    if (resolveMailPromise) resolveMailPromise("");
+                    showStatus("Hết mail!");
                     isProcessing = false;
                     copyBtn.disabled = false;
                     return;
@@ -213,21 +150,24 @@
 
                 db.ref("mails/" + targetKey).transaction((currentValue) => {
                     if (currentValue !== null) {
-                        return null; // Xóa khỏi DB
+                        return null; // Xóa mail khỏi database
                     }
                     return;
                 }, (error, committed) => {
                     if (error || !committed) {
+                        if (rejectMailPromise) rejectMailPromise("Conflict error");
                         isProcessing = false;
                         copyBtn.disabled = false;
-                        copyAndRemoveMail(); // Thử lại nếu bị trùng
+                        copyAndRemoveMail(); // Thử lại nếu trùng
                     } else {
-                        currentCopiedMail = emailValue;
-                        showStatus(emailValue, true);
+                        // Bơm dữ liệu mail vào chỗ đã xí trước đó
+                        if (resolveMailPromise) {
+                            resolveMailPromise(emailValue);
+                        } else if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(emailValue);
+                        }
 
-                        // Gọi Copy ngay
-                        executeCopy(emailValue);
-
+                        showStatus(emailValue);
                         isProcessing = false;
                         copyBtn.disabled = false;
                     }
@@ -239,7 +179,7 @@
             if (confirm("Xóa toàn bộ mail?")) {
                 mailsRef.remove().then(() => {
                     document.getElementById("mailInput").value = "";
-                    showStatus("", false);
+                    showStatus("");
                 });
             }
         };
@@ -255,21 +195,11 @@
         };
 
     } catch (e) {
-        showStatus("Lỗi kết nối", false);
+        showStatus("Lỗi kết nối");
     }
 
-    function showStatus(msg, isMail) {
-        const statusEl = document.getElementById("status");
-        const sideBtn = document.getElementById("sideCopyBtn");
-        statusEl.value = msg;
-        
-        if (isMail) {
-            sideBtn.style.visibility = "visible";
-            statusEl.select();
-        } else {
-            sideBtn.style.visibility = "hidden";
-            currentCopiedMail = "";
-        }
+    function showStatus(msg) {
+        document.getElementById("status").innerText = msg;
     }
 </script>
 
