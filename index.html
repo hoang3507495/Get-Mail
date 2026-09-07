@@ -24,7 +24,7 @@
         .btn-copy-main { width: 100%; background-color: #3b5bdb; color: white; padding: 16px 0; font-size: 18px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-copy-main:active { background-color: #2b44b6; transform: scale(0.98); }
         .btn-copy-main:disabled { background-color: #adb5bd; cursor: not-allowed; }
-        .status-msg { margin-top: 15px; font-size: 18px; text-align: center; font-weight: bold; color: #2b8a3e; word-break: break-all; min-height: 24px; }
+        .status-msg { margin-top: 15px; font-size: 18px; text-align: center; font-weight: bold; color: #2b8a3e; word-break: break-all; min-height: 24px; user-select: all; -webkit-user-select: all; }
     </style>
 </head>
 <body>
@@ -43,7 +43,7 @@
         <button class="btn btn-file" onclick="downloadFile()">⬇️ Tải file</button>
     </div>
 
-    <!-- Nút Copy chuẩn duy nhất -->
+    <!-- Nút Copy chính -->
     <button id="getBtn" class="btn-copy-main" onclick="copyAndRemoveMail()">🚀 COPY MAIL</button>
 
     <div id="status" class="status-msg"></div>
@@ -106,61 +106,59 @@
 
         let isProcessing = false;
 
-        window.copyAndRemoveMail = function() {
-            if (isProcessing) return;
-
+        window.copyAndRemoveMail = function(resolveMailPromise = null) {
             const copyBtn = document.getElementById("getBtn");
-            isProcessing = true;
-            copyBtn.disabled = true;
 
-            // BƯỚC THEN CHỐNG CHẶN COPY KHI BẬT VPN:
-            // Đăng ký cấp quyền Clipboard ngay lập tức khi ngón tay bấm nút
-            let resolveMailPromise;
-            let rejectMailPromise;
+            // Nếu bấm lần đầu
+            if (!resolveMailPromise) {
+                if (isProcessing) return;
+                isProcessing = true;
+                copyBtn.disabled = true;
+                copyBtn.innerText = "⏳ Đang lấy...";
 
-            if (navigator.clipboard && window.ClipboardItem) {
-                const mailPromise = new Promise((resolve, reject) => {
-                    resolveMailPromise = resolve;
-                    rejectMailPromise = reject;
-                });
+                if (navigator.clipboard && window.ClipboardItem) {
+                    const mailPromise = new Promise((resolve) => {
+                        resolveMailPromise = resolve; // CHỈ GIỮ LẠI RESOLVE, KHÔNG DÙNG REJECT
+                    });
 
-                // Xí chỗ trước với trình duyệt
-                const item = new ClipboardItem({
-                    'text/plain': mailPromise.then(text => new Blob([text], { type: 'text/plain' }))
-                });
+                    const item = new ClipboardItem({
+                        'text/plain': mailPromise.then(text => new Blob([text], { type: 'text/plain' }))
+                    });
 
-                navigator.clipboard.write([item]).catch(e => {
-                    console.log("Clipboard pre-authorization error:", e);
-                });
+                    navigator.clipboard.write([item]).catch(() => {});
+                }
             }
 
-            // Gọi Firebase lấy mail bất đồng bộ qua VPN
-            mailsRef.limitToFirst(1).once("value", (snapshot) => {
+            // Lấy ngẫu nhiên trong 5 mail đầu tiên để tránh xung đột
+            mailsRef.limitToFirst(5).once("value", (snapshot) => {
                 const data = snapshot.val();
                 if (!data) {
                     if (resolveMailPromise) resolveMailPromise("");
                     showStatus("Hết mail!");
                     isProcessing = false;
                     copyBtn.disabled = false;
+                    copyBtn.innerText = "🚀 COPY MAIL";
                     return;
                 }
 
-                const targetKey = Object.keys(data)[0];
+                const keys = Object.keys(data);
+                const targetKey = keys[Math.floor(Math.random() * keys.length)];
                 const emailValue = data[targetKey];
 
                 db.ref("mails/" + targetKey).transaction((currentValue) => {
                     if (currentValue !== null) {
-                        return null; // Xóa mail khỏi database
+                        return null; // Xóa khỏi DB
                     }
                     return;
                 }, (error, committed) => {
                     if (error || !committed) {
-                        if (rejectMailPromise) rejectMailPromise("Conflict error");
-                        isProcessing = false;
-                        copyBtn.disabled = false;
-                        copyAndRemoveMail(); // Thử lại nếu trùng
+                        // NẾU XUNG ĐỘT: Đợi 30ms-80ms rồi gọi lại ngầm, GIỮ NGUYÊN PROMISE CŨ
+                        const randomDelay = Math.floor(Math.random() * 50) + 30;
+                        setTimeout(() => {
+                            copyAndRemoveMail(resolveMailPromise);
+                        }, randomDelay);
                     } else {
-                        // Bơm dữ liệu mail vào chỗ đã xí trước đó
+                        // THÀNH CÔNG: Đưa duy nhất địa chỉ Gmail vào khay nhớ tạm
                         if (resolveMailPromise) {
                             resolveMailPromise(emailValue);
                         } else if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -170,6 +168,7 @@
                         showStatus(emailValue);
                         isProcessing = false;
                         copyBtn.disabled = false;
+                        copyBtn.innerText = "🚀 COPY MAIL";
                     }
                 });
             });
